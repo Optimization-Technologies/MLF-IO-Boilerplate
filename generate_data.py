@@ -25,7 +25,7 @@ class Body(BaseModel):
     datasets: List[Dataset]
 
 
-def generate_data():
+def generate_raw_data():
     print("Generating dummy data...")
     dataset_id = "dummy-dataset"
     nbr_txns = 30
@@ -50,3 +50,15 @@ def generate_data():
     dataset = Dataset(datasetId=dataset_id, transactions=transactions)
     body = Body(datasets=[dataset])
     return body.model_dump()
+
+
+def generate_start_trainer_payload():
+    return {
+        "parametersArray": [
+            {
+                "datasetId": "dummy-dataset",
+                "frequency": "M",
+                "horizon": 4,
+            }
+        ]
+    }
