@@ -26,6 +26,7 @@ class Body(BaseModel):
 
 
 def generate_data():
+    print("Generating dummy data...")
     dataset_id = "dummy-dataset"
     nbr_txns = 30
     min_quantity = 150.0

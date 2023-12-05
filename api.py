@@ -17,10 +17,12 @@ VISMA_CONNECT_GRANT_TYPE = os.getenv("VISMA_CONNECT_GRANT_TYPE")
 VISMA_CONNECT_SCOPE = os.getenv("VISMA_CONNECT_SCOPE")
 VISMA_CONNECT_URL = os.getenv("VISMA_CONNECT_URL")
 IO_BASE_URL = os.getenv("IO_BASE_URL")
+TENANT_ID = os.getenv("TENANT_ID")
 
 # Constants
 MAX_RETRIES = 5
-SLEEP_DURATION = 3
+SLEEP_DURATION_SHORT = 3
+SLEEP_DURATION_LONG = 6
 
 
 def upload_data(tenant_id: str):
@@ -35,7 +37,7 @@ def upload_data(tenant_id: str):
         headers=headers,
     )
     _update_access_token(res.status_code)
-    sleep(SLEEP_DURATION)
+    sleep(SLEEP_DURATION_SHORT)
     res = get_job_status(tenant_id, job_id)
     if res and res.get("status") == "success":
         print("Data uploaded successfully")
@@ -44,6 +46,7 @@ def upload_data(tenant_id: str):
 
 
 def get_presigned_url(tenant_id: str) -> Tuple[str, str]:
+    print("Getting presigned url...")
     url = f"{IO_BASE_URL}/presigned_url"
     headers = _get_headers(tenant_id=tenant_id)
     res = requests.get(url, headers=headers)
@@ -56,6 +59,8 @@ def get_presigned_url(tenant_id: str) -> Tuple[str, str]:
 
 
 def get_job_status(tenant_id: str, job_id: str) -> str:
+    print("Getting job status...")
+
     url = f"{IO_BASE_URL}/status"
     headers = _get_headers(tenant_id=tenant_id, job_id=job_id)
     response = requests.get(url, headers=headers)
@@ -63,12 +68,13 @@ def get_job_status(tenant_id: str, job_id: str) -> str:
     tries = 0
     while response.status_code == 404 and tries < MAX_RETRIES:
         tries += 1
-        sleep(SLEEP_DURATION)
+        sleep(SLEEP_DURATION_SHORT)
         response = requests.get(url, headers=headers)
 
     if response.status_code == 200:
         while response.json().get("status") == "inProgress":
-            sleep(SLEEP_DURATION)
+            print(f'\tResponse status: {response.json().get("status")}')
+            sleep(SLEEP_DURATION_LONG)
             response = requests.get(url, headers=headers)
         return response.json()
     else:
@@ -116,4 +122,4 @@ def _update_env_file(access_token: str):
         f.writelines(lines)
 
 
-upload_data(os.getenv("TENANT_ID"))
+upload_data(TENANT_ID)
