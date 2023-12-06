@@ -1,31 +1,13 @@
+import os
 import random
 from datetime import datetime
-from typing import List
 
 from dateutil.relativedelta import relativedelta
-from pydantic import BaseModel
+
+from data_models import *
 
 
-class Transaction(BaseModel):
-    quantity: float
-    requestedDeliveryDate: str
-    salesDate: str
-    departureDate: str
-    transactionId: str
-    unitCost: float
-    unitPrice: float
-
-
-class Dataset(BaseModel):
-    datasetId: str
-    transactions: List[Transaction]
-
-
-class Body(BaseModel):
-    datasets: List[Dataset]
-
-
-def generate_raw_data():
+def generate_upload_data() -> UploadDataPayload:
     print("Generating dummy data...")
     dataset_id = "dummy-dataset"
     nbr_txns = 30
@@ -48,17 +30,36 @@ def generate_raw_data():
         transactions.append(txn)
         date -= relativedelta(months=1)
     dataset = Dataset(datasetId=dataset_id, transactions=transactions)
-    body = Body(datasets=[dataset])
-    return body.model_dump()
+    return UploadDataPayload(datasets=[dataset])
 
 
-def generate_start_trainer_payload():
-    return {
-        "parametersArray": [
-            {
-                "datasetId": "dummy-dataset",
-                "frequency": "M",
-                "horizon": 4,
-            }
-        ]
-    }
+def generate_start_trainer_payload() -> StartTrainerPayload:
+    return StartTrainerPayload(
+        **{
+            "parametersArray": [
+                {
+                    "datasetId": "dummy-dataset",
+                    "frequency": "M",
+                    "horizon": 4,
+                }
+            ]
+        }
+    )
+
+
+def generate_headers(
+    include_token: bool = True,
+    include_content_type: bool = False,
+    tenant_id: str = "",
+    job_id: str = "",
+) -> dict:
+    headers = {}
+    if include_token:
+        headers["Authorization"] = f'Bearer {os.getenv("ACCESS_TOKEN")}'
+    if include_content_type:
+        headers["Content-Type"] = "application/json"
+    if tenant_id:
+        headers["tenantId"] = tenant_id
+    if job_id:
+        headers["jobId"] = job_id
+    return headers

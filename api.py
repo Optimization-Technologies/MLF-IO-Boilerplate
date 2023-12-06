@@ -7,6 +7,7 @@ import requests
 from dotenv import find_dotenv, load_dotenv
 
 from generate_data import *
+from data_models import *
 
 load_dotenv(find_dotenv())
 
@@ -31,23 +32,85 @@ TODO
 """
 
 
-### TRAINING ###########################################################################
-def start_trainer(tenant_id: str):
-    print("Starting trainer...")
+"""
+Stuff identified to fix later:
+- Required fields in responses - make sure all fields that we list in responses are actually there anyway
+"""
 
-    # Get the headers and payload for the request to the /start_trainer endpoint
-    headers = _get_headers(include_content_type=True, tenant_id=tenant_id)
-    payload = generate_start_trainer_payload()
 
-    # Make the request to the /start_trainer endpoint
-    res = requests.post(
-        url=f"{IO_BASE_URL}/start_trainer",
+### DATA ###############################################################################
+def upload_data(tenant_id: str):
+    # Start by getting the presigned url to upload data to and the job ID
+    presigned_url_response: PresignedUrlResponseSuccess = get_presigned_url(tenant_id)
+
+    # Prepare headers and payload for the request to the presigned url
+    headers: dict = generate_headers(include_token=False, tenant_id=tenant_id)
+    payload: UploadDataPayload = generate_upload_data()
+
+    # Make the request to the presigned url
+    print("Uploading data...")
+    res = requests.put(
+        presigned_url_response.url,
         headers=headers,
-        data=json.dumps(payload),  # NB! Need to use json.dumps() to make dict -> str
+        data=json.dumps(payload.model_dump()),  # NB! Need to stringify
     )
 
     # Check the status code to see if access token is outdated (re-run script if so)
-    _update_access_token(res.status_code)
+    update_access_token(res.status_code)
+
+    # Wait for a bit, then start polling the status endpoint
+    sleep(SLEEP_DURATION_SHORT)
+    poll_job_status(tenant_id, presigned_url_response.jobId)
+
+
+def get_presigned_url(tenant_id: str) -> PresignedUrlResponseSuccess:
+    # Prepare headers for the request to the /presigned_url endpoint
+    url = f"{IO_BASE_URL}/presigned_url"
+    headers: dict = generate_headers(tenant_id=tenant_id)
+
+    # Make the request to the /presigned_url endpoint
+    print("Getting presigned url...")
+    res = requests.get(url, headers=headers)
+
+    # Check the status code to see if access token is outdated (re-run script if so)
+    update_access_token(res.status_code)
+
+    # If the request was successful, return the success response
+    if res.status_code == 200:
+        return PresignedUrlResponseSuccess(**res.json())
+
+    # If not, handle the failure by printing the error message and raising an exception
+    _handle_failed_presigned_url_call(res)
+
+
+# TODO: Generalize
+def _handle_failed_presigned_url_call(res: requests.Response):
+    presigned_url_response = PresignedUrlResponseFailure(**res.json())
+    print(
+        f"Presigned url call failed."
+        f"\nError: {presigned_url_response.error}"
+        f"\nMessage: {presigned_url_response.message}"
+    )
+    raise Exception("Presigned url call failed.")
+
+
+### TRAINING ###########################################################################
+# TODO: Make this work with the new setup
+def start_trainer(tenant_id: str):
+    # Get the headers and payload for the request to the /start_trainer endpoint
+    headers = generate_headers(include_content_type=True, tenant_id=tenant_id)
+    payload = generate_start_trainer_payload()
+
+    # Make the request to the /start_trainer endpoint
+    print("Starting trainer...")
+    res = requests.post(
+        url=f"{IO_BASE_URL}/start_trainer",
+        headers=headers,
+        data=json.dumps(payload),  # NB! Need to stringify
+    )
+
+    # Check the status code to see if access token is outdated (re-run script if so)
+    update_access_token(res.status_code)
 
     # Check if the request was successful (break if not)
     is_success = _is_request_success(res)
@@ -81,59 +144,11 @@ def _poll_status_until_complete(tenant_id: str, job_id: str) -> bool:
         return False
 
 
-### DATA ###############################################################################
-def upload_data(tenant_id: str):
-    url, job_id = get_presigned_url(tenant_id)
-    if not url:
-        raise Exception("Error getting presigned url")
-    headers = _get_headers(include_token=False, tenant_id=tenant_id)
-    data = generate_raw_data()
-    print("Uploading data...")
-    res = requests.put(
-        url,
-        data=json.dumps(data),  # NB! Need to use json.dumps() to make dict -> str
-        headers=headers,
-    )
-    _update_access_token(res.status_code)
-    sleep(SLEEP_DURATION_SHORT)
-    poll_job_status(tenant_id, job_id)
-
-
-def get_presigned_url(tenant_id: str) -> Tuple[str, str]:
-    print("Getting presigned url...")
-    url = f"{IO_BASE_URL}/presigned_url"
-    headers = _get_headers(tenant_id=tenant_id)
-    res = requests.get(url, headers=headers)
-    _update_access_token(res.status_code)
-    if res.status_code == 200:
-        return res.json().get("url"), res.json().get("jobId")
-    else:
-        print(f"Error getting presigned url. Response:\n{res.json()}")
-        return None
-
-
-### STATUS ########################################################################
-class DatasetStatus(BaseModel):
-    datasetId: str
-    status: str
-    message: str
-
-
-class StatusResponseSuccess(BaseModel):
-    status: str
-    message: str
-    datasetsStatus: List[DatasetStatus]
-
-
-class StatusResponseFailure(BaseModel):
-    error: str
-    message: str
-
-
+### STATUS #############################################################################
 def poll_job_status(tenant_id: str, job_id: str):
     print("Polling job status...")
     url = f"{IO_BASE_URL}/status"
-    headers = _get_headers(tenant_id=tenant_id, job_id=job_id)
+    headers: dict = generate_headers(tenant_id=tenant_id, job_id=job_id)
     status_response: StatusResponseSuccess = _start_status_poll(url, headers)
     status_response: StatusResponseSuccess = _call_status_endpoint(url, headers)
     while status_response.status == "inProgress":
@@ -172,25 +187,8 @@ def _handle_failed_status_call(res: requests.Response):
     raise Exception("Status call failed.")
 
 
-def _get_headers(
-    include_token: bool = True,
-    include_content_type: bool = False,
-    tenant_id: str = "",
-    job_id: str = "",
-):
-    headers = {}
-    if include_token:
-        headers["Authorization"] = f'Bearer {os.getenv("ACCESS_TOKEN")}'
-    if include_content_type:
-        headers["Content-Type"] = "application/json"
-    if tenant_id:
-        headers["tenantId"] = tenant_id
-    if job_id:
-        headers["jobId"] = job_id
-    return headers
-
-
-def _update_access_token(status_code: int):
+### ACCESS #############################################################################
+def update_access_token(status_code: int):
     if status_code != 403:
         return
     res = requests.post(
