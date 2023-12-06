@@ -1,7 +1,6 @@
 import json
 import os
 from time import sleep
-from typing import Tuple
 
 import requests
 from dotenv import find_dotenv, load_dotenv
@@ -25,15 +24,9 @@ MAX_RETRIES = 5
 SLEEP_DURATION_SHORT = 3
 SLEEP_DURATION_LONG = 6
 
-"""
-TODO
-- Create pydantic models for headers, payloads, responses, etc.
-- Make better exceptions for crashing the script where you want to crash it
-"""
-
 
 """
-Stuff identified to fix later:
+TODO Stuff identified to fix later:
 - Required fields in responses - make sure all fields that we list in responses are actually there anyway
 """
 
@@ -45,7 +38,7 @@ def upload_data(tenant_id: str):
 
     # Prepare headers and payload for the request to the presigned url
     headers: dict = generate_headers(include_token=False, tenant_id=tenant_id)
-    payload: UploadDataPayload = generate_upload_data()
+    payload: UploadDataPayload = generate_upload_data_payload()
 
     # Make the request to the presigned url
     print("Uploading data...")
@@ -80,68 +73,63 @@ def get_presigned_url(tenant_id: str) -> PresignedUrlResponseSuccess:
         return PresignedUrlResponseSuccess(**res.json())
 
     # If not, handle the failure by printing the error message and raising an exception
-    _handle_failed_presigned_url_call(res)
-
-
-# TODO: Generalize
-def _handle_failed_presigned_url_call(res: requests.Response):
-    presigned_url_response = PresignedUrlResponseFailure(**res.json())
-    print(
-        f"Presigned url call failed."
-        f"\nError: {presigned_url_response.error}"
-        f"\nMessage: {presigned_url_response.message}"
-    )
-    raise Exception("Presigned url call failed.")
+    _handle_failed_request(res, "presigned_url")
 
 
 ### TRAINING ###########################################################################
-# TODO: Make this work with the new setup
-def start_trainer(tenant_id: str):
+def start_trainer(tenant_id: str) -> StartTrainerResponseSuccess:
     # Get the headers and payload for the request to the /start_trainer endpoint
     headers = generate_headers(include_content_type=True, tenant_id=tenant_id)
-    payload = generate_start_trainer_payload()
+    payload: StartTrainerPayload = generate_start_trainer_payload()
 
     # Make the request to the /start_trainer endpoint
     print("Starting trainer...")
     res = requests.post(
         url=f"{IO_BASE_URL}/start_trainer",
         headers=headers,
-        data=json.dumps(payload),  # NB! Need to stringify
+        data=json.dumps(payload.model_dump()),  # NB! Need to stringify
     )
 
     # Check the status code to see if access token is outdated (re-run script if so)
     update_access_token(res.status_code)
 
-    # Check if the request was successful (break if not)
-    is_success = _is_request_success(res)
-    if not is_success:
-        return False
+    # If the request was successful, poll the status endpoint until the job is complete
+    if res.status_code == 202:
+        start_trainer_response = StartTrainerResponseSuccess(**res.json())
+        sleep(SLEEP_DURATION_SHORT)
+        poll_job_status(tenant_id, start_trainer_response.jobId)
+        return start_trainer_response
+
+    # If not, handle the failure by printing the error message and raising an exception
+    _handle_failed_request(res, "start_trainer")
+
+
+### PREDICTION #########################################################################
+def create_prediction(tenant_id: str) -> CreatePredictionResponseSuccess:
+    # Get the headers and payload for the request to the /create_prediction endpoint
+    headers = generate_headers(include_content_type=True, tenant_id=tenant_id)
+    payload: CreatePredictionPayload = generate_create_prediction_payload()
+
+    # Make the request to the /create_prediction endpoint
+    print("Creating prediction...")
+    res = requests.post(
+        url=f"{IO_BASE_URL}/create_prediction",
+        headers=headers,
+        data=json.dumps(payload.model_dump()),  # NB! Need to stringify
+    )
+
+    # Check the status code to see if access token is outdated (re-run script if so)
+    update_access_token(res.status_code)
 
     # If the request was successful, poll the status endpoint until the job is complete
-    job_id = res.json().get("jobId")
-    is_success = _poll_status_until_complete(tenant_id, job_id)
-    return is_success
-
-
-def _is_request_success(res: requests.Response) -> bool:
-    print(res.json().get("message"))
     if res.status_code == 202:
-        return True
-    else:
-        return False
+        create_prediction_response = CreatePredictionResponseSuccess(**res.json())
+        sleep(SLEEP_DURATION_SHORT)
+        poll_job_status(tenant_id, create_prediction_response.jobId)
+        return create_prediction_response
 
-
-def _poll_status_until_complete(tenant_id: str, job_id: str) -> bool:
-    sleep(SLEEP_DURATION_SHORT)
-    res = poll_job_status(tenant_id, job_id)
-    if res.status_code == 200:
-        print(res.json().get("message"))
-    else:
-        print(res.status_code)
-    if res and res.get("status") == "success":
-        return True
-    else:
-        return False
+    # If not, handle the failure by printing the error message and raising an exception
+    _handle_failed_request(res, "create_prediction")
 
 
 ### STATUS #############################################################################
@@ -167,24 +155,14 @@ def _start_status_poll(url: str, headers: dict) -> StatusResponseSuccess:
         res = requests.get(url, headers=headers)
     if res.status_code == 200:
         return StatusResponseSuccess(**res.json())
-    _handle_failed_status_call(res)
+    _handle_failed_request(res, "status")
 
 
 def _call_status_endpoint(url: str, headers: dict) -> StatusResponseSuccess:
     res = requests.get(url, headers=headers)
     if res.status_code == 200:
         return StatusResponseSuccess(**res.json())
-    _handle_failed_status_call(res)
-
-
-def _handle_failed_status_call(res: requests.Response):
-    status_response = StatusResponseFailure(**res.json())
-    print(
-        f"Status call failed."
-        f"\nError: {status_response.error}"
-        f"\nMessage: {status_response.message}"
-    )
-    raise Exception("Status call failed.")
+    _handle_failed_request(res, "status")
 
 
 ### ACCESS #############################################################################
@@ -218,5 +196,17 @@ def _update_env_file(access_token: str):
         f.writelines(lines)
 
 
-upload_data(TENANT_ID)
+### GENERAL ############################################################################
+def _handle_failed_request(res: requests.Response, endpoint_name: str):
+    failure_resposnse = FailureResponse(**res.json())
+    print(
+        f"Call to {endpoint_name} failed."
+        f"\nError: {failure_resposnse.error}"
+        f"\nMessage: {failure_resposnse.message}"
+    )
+    raise Exception(f"Call to {endpoint_name} failed. See Error and Message above.")
+
+
+# upload_data(TENANT_ID)
 # start_trainer(TENANT_ID)
+create_prediction(TENANT_ID)

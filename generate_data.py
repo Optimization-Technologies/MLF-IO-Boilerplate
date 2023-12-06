@@ -7,7 +7,7 @@ from dateutil.relativedelta import relativedelta
 from data_models import *
 
 
-def generate_upload_data() -> UploadDataPayload:
+def generate_upload_data_payload() -> UploadDataPayload:
     print("Generating dummy data...")
     dataset_id = "dummy-dataset"
     nbr_txns = 30
@@ -37,11 +37,57 @@ def generate_start_trainer_payload() -> StartTrainerPayload:
     return StartTrainerPayload(
         **{
             "parametersArray": [
-                {
-                    "datasetId": "dummy-dataset",
-                    "frequency": "M",
-                    "horizon": 4,
-                }
+                StartTrainerParameterObject(
+                    **{
+                        "datasetId": "dummy-dataset",
+                        "frequency": "M",
+                        "horizon": 4,
+                    }
+                )
+            ]
+        }
+    )
+
+
+def generate_create_prediction_payload() -> CreatePredictionPayload:
+    return CreatePredictionPayload(
+        **{
+            "parametersArray": [
+                CreatePredictionParameterObject(
+                    **{
+                        "datasetId": "dummy-dataset",
+                        "currentInventoryLevel": 50.0,
+                        "wantedServiceLevel": 0.95,
+                        "replenishmentInterval": ReplenishmentInterval(
+                            **{
+                                "value": 1,
+                                "granularity": "M",
+                            }
+                        ),
+                        "suppliers": [
+                            Supplier(
+                                **{
+                                    "supplierId": "supplier-1",
+                                    "leadTime": LeadTime(
+                                        **{
+                                            "value": 2,
+                                            "granularity": "W",
+                                        }
+                                    ),
+                                }
+                            )
+                        ],
+                        "supplierInfoArray": [
+                            SupplierInfo(
+                                **{
+                                    "supplierId": "supplier-1",
+                                    "supplierName": "Supplier 1",
+                                    "minimumOrderValue": 1000.0,
+                                }
+                            )
+                        ],
+                    }
+                )
             ]
         }
     )
