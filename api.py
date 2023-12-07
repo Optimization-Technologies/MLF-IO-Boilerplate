@@ -28,6 +28,7 @@ SLEEP_DURATION_LONG = 6
 """
 TODO Stuff identified to fix later:
 - Required fields in responses - make sure all fields that we list in responses are actually there anyway
+- We do not seem to always return a message from the Results endpoint (not for 200 OK)
 """
 
 
@@ -132,6 +133,28 @@ def create_prediction(tenant_id: str) -> CreatePredictionResponseSuccess:
     _handle_failed_request(res, "create_prediction")
 
 
+def get_results(tenant_id: str, job_id: str) -> ResultsResponseSuccess:
+    # Get the headers and payload for the request to the /prediction_results endpoint
+    headers = generate_headers(tenant_id=tenant_id, job_id=job_id)
+
+    # Make the request to the /prediction_results endpoint
+    print("Getting prediction results...")
+    res = requests.get(
+        url=f"{IO_BASE_URL}/results",
+        headers=headers,
+    )
+
+    # Check the status code to see if access token is outdated (re-run script if so)
+    update_access_token(res.status_code)
+
+    # If the request was successful, return the success response
+    if res.status_code == 200:
+        return ResultsResponseSuccess(**res.json())
+
+    # If not, handle the failure by printing the error message and raising an exception
+    _handle_failed_request(res, "results")
+
+
 ### STATUS #############################################################################
 def poll_job_status(tenant_id: str, job_id: str):
     print("Polling job status...")
@@ -209,4 +232,5 @@ def _handle_failed_request(res: requests.Response, endpoint_name: str):
 
 # upload_data(TENANT_ID)
 # start_trainer(TENANT_ID)
-create_prediction(TENANT_ID)
+# res: CreatePredictionResponseSuccess = create_prediction(TENANT_ID)
+get_results(TENANT_ID, job_id="55148db5b3fc412fa7ac7c6a61a3cf72")

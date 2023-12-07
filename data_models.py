@@ -72,16 +72,55 @@ class CreatePredictionParameterObject(BaseModel):
     wantedServiceLevel: float
     replenishmentInterval: ReplenishmentInterval
     suppliers: List[Supplier]
-    supplierInfoArray: List[SupplierInfo]
 
 
 class CreatePredictionPayload(BaseModel):
     parametersArray: List[CreatePredictionParameterObject]
+    supplierInfoArray: List[SupplierInfo]
 
 
 class CreatePredictionResponseSuccess(BaseModel):
     jobId: str
     message: str
+
+
+class ValidDateInterval(BaseModel):
+    startDate: str
+    endDate: str
+
+
+class Suggestion(BaseModel):
+    quantity: float
+    validDateInterval: ValidDateInterval
+
+
+class ForecastObject(BaseModel):
+    date: str
+    predictedQuantity: float
+    predictedSeason: float
+    predictedTrend: float
+    predictedNoise: float
+    lowerQuantity: float
+    upperQuantity: float
+
+
+class HistoricalDataObject(BaseModel):
+    date: str
+    quantity: float
+
+
+class ResultsObject(BaseModel):
+    datasetId: str
+    supplierId: str
+    safetyStockSuggestion: Suggestion
+    reorderPointSuggestion: Suggestion
+    replenishmentSuggestion: Suggestion
+    forecast: List[ForecastObject]
+    historicalData: List[HistoricalDataObject]
+
+
+class ResultsResponseSuccess(BaseModel):
+    results: List[ResultsObject]
 
 
 ### STATUS #############################################################################

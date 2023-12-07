@@ -77,18 +77,18 @@ def generate_create_prediction_payload() -> CreatePredictionPayload:
                                 }
                             )
                         ],
-                        "supplierInfoArray": [
-                            SupplierInfo(
-                                **{
-                                    "supplierId": "supplier-1",
-                                    "supplierName": "Supplier 1",
-                                    "minimumOrderValue": 1000.0,
-                                }
-                            )
-                        ],
                     }
                 )
-            ]
+            ],
+            "supplierInfoArray": [
+                SupplierInfo(
+                    **{
+                        "supplierId": "supplier-1",
+                        "supplierName": "Supplier 1",
+                        "minimumOrderValue": 1000.0,
+                    }
+                )
+            ],
         }
     )
 
