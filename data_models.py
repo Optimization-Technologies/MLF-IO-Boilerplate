@@ -2,7 +2,7 @@ from typing import List
 from pydantic import BaseModel
 
 
-### DATA ###############################################################################
+### UPLOAD DATA ########################################################################
 class Transaction(BaseModel):
     quantity: float
     requestedDeliveryDate: str
@@ -121,6 +121,11 @@ class ResultsObject(BaseModel):
 
 class ResultsResponseSuccess(BaseModel):
     results: List[ResultsObject]
+
+
+### DELETE DATA ########################################################################
+class DeleteDataResponseSuccess(BaseModel):
+    message: str
 
 
 ### STATUS #############################################################################

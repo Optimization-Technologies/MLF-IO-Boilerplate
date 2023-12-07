@@ -26,13 +26,21 @@ SLEEP_DURATION_LONG = 6
 
 
 """
-TODO Stuff identified to fix later:
+TODO In this script:
+- Automatic access token update
+- Data deletion
+- Inventory classification
+- CamelCase vs snake_case
+"""
+
+"""
+TODO Stuff identified to fix in the IO service:
 - Required fields in responses - make sure all fields that we list in responses are actually there anyway
 - We do not seem to always return a message from the Results endpoint (not for 200 OK)
 """
 
 
-### DATA ###############################################################################
+### UPLOAD DATA ########################################################################
 def upload_data(tenant_id: str):
     # Start by getting the presigned url to upload data to and the job ID
     presigned_url_response: PresignedUrlResponseSuccess = get_presigned_url(tenant_id)
@@ -155,6 +163,39 @@ def get_results(tenant_id: str, job_id: str) -> ResultsResponseSuccess:
     _handle_failed_request(res, "results")
 
 
+### DELETE DATA ########################################################################
+def delete_data(
+    tenant_id: str,
+    dataset_id: str,
+    from_date: str = "",
+    to_date: str = "",
+):
+    # Get the headers for the request to the /data endpoint
+    headers = generate_headers(include_content_type=True, tenant_id=tenant_id)
+    url = (
+        f"{IO_BASE_URL}/data/{dataset_id}"
+        f"{'?fromDate=' + from_date if from_date else ''}"
+        f"{'&toDate=' + to_date if to_date else ''}"
+    )
+
+    # Make the request to the /data endpoint
+    print("Deleting data...")
+    res = requests.delete(
+        url=url,
+        headers=headers,
+    )
+
+    # Check the status code to see if access token is outdated (re-run script if so)
+    update_access_token(res.status_code)
+
+    # If the request was successful, return the success response
+    if res.status_code == 200:
+        return DeleteDataResponseSuccess(**res.json())
+
+    # If not, handle the failure by printing the error message and raising an exception
+    _handle_failed_request(res, "data")
+
+
 ### STATUS #############################################################################
 def poll_job_status(tenant_id: str, job_id: str):
     print("Polling job status...")
@@ -219,7 +260,7 @@ def _update_env_file(access_token: str):
         f.writelines(lines)
 
 
-### GENERAL ############################################################################
+### HELPERS ############################################################################
 def _handle_failed_request(res: requests.Response, endpoint_name: str):
     failure_resposnse = FailureResponse(**res.json())
     print(
@@ -230,7 +271,11 @@ def _handle_failed_request(res: requests.Response, endpoint_name: str):
     raise Exception(f"Call to {endpoint_name} failed. See Error and Message above.")
 
 
-# upload_data(TENANT_ID)
+upload_data(TENANT_ID)
 # start_trainer(TENANT_ID)
 # res: CreatePredictionResponseSuccess = create_prediction(TENANT_ID)
-get_results(TENANT_ID, job_id="55148db5b3fc412fa7ac7c6a61a3cf72")
+# get_results(TENANT_ID, job_id="55148db5b3fc412fa7ac7c6a61a3cf72")
+res: DeleteDataResponseSuccess = delete_data(
+    TENANT_ID, dataset_id="dummy-dataset", from_date="2022-01-01", to_date="2022-10-15"
+)
+print(res.message)
