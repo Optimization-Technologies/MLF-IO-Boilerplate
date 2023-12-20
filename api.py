@@ -1,12 +1,14 @@
 import json
 import os
+from functools import wraps
 from time import sleep
 
 import requests
 from dotenv import find_dotenv, load_dotenv
 
-from generate_data import *
 from data_models import *
+from generate_data import *
+from token_manager import TokenManager
 
 load_dotenv(find_dotenv())
 
@@ -26,28 +28,41 @@ SLEEP_DURATION_LONG = 6
 
 
 """
-TODO In this script:
-- Automatic access token update
-- Data deletion
-- Inventory classification
-- CamelCase vs snake_case
-"""
-
-"""
 TODO Stuff identified to fix in the IO service:
 - Required fields in responses - make sure all fields that we list in responses are actually there anyway
 - We do not seem to always return a message from the Results endpoint (not for 200 OK)
+- Simplify suppliers schema
 """
 
 
+TM = TokenManager()
+
+
+def handle_token_expiry(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except OutdatedAccessTokenException:
+            print("Access token expired. Refreshing...")
+            update_access_token()
+            print("Retrying request...")
+            return func(*args, **kwargs)
+        except Exception as e:
+            raise e
+
+    return wrapper
+
+
 ### UPLOAD DATA ########################################################################
-def upload_data(tenant_id: str):
+@handle_token_expiry
+def upload_data(tenant_id: str, nbr_datasets: int = 1) -> List[str]:
     # Start by getting the presigned url to upload data to and the job ID
     presigned_url_response: PresignedUrlResponseSuccess = get_presigned_url(tenant_id)
 
     # Prepare headers and payload for the request to the presigned url
-    headers: dict = generate_headers(include_token=False, tenant_id=tenant_id)
-    payload: UploadDataPayload = generate_upload_data_payload()
+    headers: dict = TM.generate_headers(include_token=False, tenant_id=tenant_id)
+    payload: UploadDataPayload = generate_upload_data_payload(nbr_datasets)
 
     # Make the request to the presigned url
     print("Uploading data...")
@@ -57,25 +72,30 @@ def upload_data(tenant_id: str):
         data=json.dumps(payload.model_dump()),  # NB! Need to stringify
     )
 
-    # Check the status code to see if access token is outdated (re-run script if so)
-    update_access_token(res.status_code)
+    # If response status code is 403, raise exception to trigger access token update
+    if res.status_code == 403:
+        raise OutdatedAccessTokenException("Outdated access token!", res)
 
-    # Wait for a bit, then start polling the status endpoint
-    sleep(SLEEP_DURATION_SHORT)
+    # Poll the status endpoint until the job is complete
     poll_job_status(tenant_id, presigned_url_response.jobId)
 
+    # Return the dataset IDs that were uploaded
+    return [dataset.datasetId for dataset in payload.datasets]
 
+
+@handle_token_expiry
 def get_presigned_url(tenant_id: str) -> PresignedUrlResponseSuccess:
     # Prepare headers for the request to the /presigned_url endpoint
     url = f"{IO_BASE_URL}/presigned_url"
-    headers: dict = generate_headers(tenant_id=tenant_id)
+    headers: dict = TM.generate_headers(tenant_id=tenant_id)
 
     # Make the request to the /presigned_url endpoint
     print("Getting presigned url...")
     res = requests.get(url, headers=headers)
 
-    # Check the status code to see if access token is outdated (re-run script if so)
-    update_access_token(res.status_code)
+    # If response status code is 403, raise exception to trigger access token update
+    if res.status_code == 403:
+        raise OutdatedAccessTokenException("Outdated access token!", res)
 
     # If the request was successful, return the success response
     if res.status_code == 200:
@@ -86,9 +106,10 @@ def get_presigned_url(tenant_id: str) -> PresignedUrlResponseSuccess:
 
 
 ### TRAINING ###########################################################################
+@handle_token_expiry
 def start_trainer(tenant_id: str) -> StartTrainerResponseSuccess:
     # Get the headers and payload for the request to the /start_trainer endpoint
-    headers = generate_headers(include_content_type=True, tenant_id=tenant_id)
+    headers = TM.generate_headers(include_content_type=True, tenant_id=tenant_id)
     payload: StartTrainerPayload = generate_start_trainer_payload()
 
     # Make the request to the /start_trainer endpoint
@@ -99,13 +120,13 @@ def start_trainer(tenant_id: str) -> StartTrainerResponseSuccess:
         data=json.dumps(payload.model_dump()),  # NB! Need to stringify
     )
 
-    # Check the status code to see if access token is outdated (re-run script if so)
-    update_access_token(res.status_code)
+    # If response status code is 403, raise exception to trigger access token update
+    if res.status_code == 403:
+        raise OutdatedAccessTokenException("Outdated access token!", res)
 
     # If the request was successful, poll the status endpoint until the job is complete
     if res.status_code == 202:
         start_trainer_response = StartTrainerResponseSuccess(**res.json())
-        sleep(SLEEP_DURATION_SHORT)
         poll_job_status(tenant_id, start_trainer_response.jobId)
         return start_trainer_response
 
@@ -114,9 +135,10 @@ def start_trainer(tenant_id: str) -> StartTrainerResponseSuccess:
 
 
 ### PREDICTION #########################################################################
+@handle_token_expiry
 def create_prediction(tenant_id: str) -> CreatePredictionResponseSuccess:
     # Get the headers and payload for the request to the /create_prediction endpoint
-    headers = generate_headers(include_content_type=True, tenant_id=tenant_id)
+    headers = TM.generate_headers(include_content_type=True, tenant_id=tenant_id)
     payload: CreatePredictionPayload = generate_create_prediction_payload()
 
     # Make the request to the /create_prediction endpoint
@@ -127,43 +149,120 @@ def create_prediction(tenant_id: str) -> CreatePredictionResponseSuccess:
         data=json.dumps(payload.model_dump()),  # NB! Need to stringify
     )
 
-    # Check the status code to see if access token is outdated (re-run script if so)
-    update_access_token(res.status_code)
+    # If response status code is 403, raise exception to trigger access token update
+    if res.status_code == 403:
+        raise OutdatedAccessTokenException("Outdated access token!", res)
 
     # If the request was successful, poll the status endpoint until the job is complete
     if res.status_code == 202:
         create_prediction_response = CreatePredictionResponseSuccess(**res.json())
-        sleep(SLEEP_DURATION_SHORT)
         poll_job_status(tenant_id, create_prediction_response.jobId)
+        print(create_prediction_response.jobId)
         return create_prediction_response
 
     # If not, handle the failure by printing the error message and raising an exception
     _handle_failed_request(res, "create_prediction")
 
 
+@handle_token_expiry
 def get_results(tenant_id: str, job_id: str) -> ResultsResponseSuccess:
-    # Get the headers and payload for the request to the /prediction_results endpoint
-    headers = generate_headers(tenant_id=tenant_id, job_id=job_id)
+    # Get the headers for the request to the /results endpoint
+    headers = TM.generate_headers(tenant_id=tenant_id, job_id=job_id)
 
-    # Make the request to the /prediction_results endpoint
-    print("Getting prediction results...")
+    # Make the request to the /results endpoint
+    print("Getting results...")
     res = requests.get(
         url=f"{IO_BASE_URL}/results",
         headers=headers,
     )
 
-    # Check the status code to see if access token is outdated (re-run script if so)
-    update_access_token(res.status_code)
+    # If response status code is 403, raise exception to trigger access token update
+    if res.status_code == 403:
+        raise OutdatedAccessTokenException("Outdated access token!", res)
 
     # If the request was successful, return the success response
     if res.status_code == 200:
-        return ResultsResponseSuccess(**res.json())
+        results_response = ResultsResponseSuccess(**res.json())
+        msg = (
+            results_response.message
+            if results_response.message != ""
+            else "NOT IMPLEMENTED"
+        )
+        print(f"Results retrieved! Message: {msg}\n")
+        return results_response
 
     # If not, handle the failure by printing the error message and raising an exception
     _handle_failed_request(res, "results")
 
 
+### INVENTORY CLASSIFICATION ###########################################################
+@handle_token_expiry
+def start_inventory_classification(
+    tenant_id: str,
+    dataset_ids: List[str],
+) -> StartInventoryClassificationResponseSuccess:
+    # Get the headers and payload for the request to /start_inventory_classification
+    headers = TM.generate_headers(include_content_type=True, tenant_id=tenant_id)
+    payload = generate_start_inventory_classification_payload(dataset_ids)
+
+    # Make the request to the /start_inventory_classification endpoint
+    print("Starting inventory classification...")
+    res = requests.post(
+        url=f"{IO_BASE_URL}/start_inventory_classification",
+        headers=headers,
+        data=json.dumps(payload.model_dump()),  # NB! Need to stringify
+    )
+
+    # If response status code is 403, raise exception to trigger access token update
+    if res.status_code == 403:
+        raise OutdatedAccessTokenException("Outdated access token!", res)
+
+    # If the request was successful, poll the status endpoint until the job is complete
+    if res.status_code == 202:
+        res = StartInventoryClassificationResponseSuccess(**res.json())
+        poll_job_status(tenant_id, res.jobId)
+        return res
+
+    # If not, handle the failure by printing the error message and raising an exception
+    _handle_failed_request(res, "start_inventory_classification")
+
+
+@handle_token_expiry
+def get_inventory_classification_results(
+    tenant_id: str,
+    job_id: str,
+) -> InventoryClassificationResultsResponse:
+    # Get the headers for the request to the /inventory_classification_results endpoint
+    headers = TM.generate_headers(tenant_id=tenant_id, job_id=job_id)
+
+    # Make the request to the /inventory_classification_results endpoint
+    print("Getting inventory classification results...")
+    res = requests.get(
+        url=f"{IO_BASE_URL}/inventory_classification_results",
+        headers=headers,
+    )
+
+    # If response status code is 403, raise exception to trigger access token update
+    if res.status_code == 403:
+        raise OutdatedAccessTokenException("Outdated access token!", res)
+
+    # If the request was successful, return the success response
+    if res.status_code == 200:
+        results_response = InventoryClassificationResultsResponse(**res.json())
+        msg = (
+            results_response.message
+            if results_response.message != ""
+            else "NOT IMPLEMENTED"
+        )
+        print(f"Results retrieved! Message: {msg}\n")
+        return results_response
+
+    # If not, handle the failure by printing the error message and raising an exception
+    _handle_failed_request(res, "inventory_classification_results")
+
+
 ### DELETE DATA ########################################################################
+@handle_token_expiry
 def delete_data(
     tenant_id: str,
     dataset_id: str,
@@ -171,7 +270,9 @@ def delete_data(
     to_date: str = "",
 ):
     # Get the headers for the request to the /data endpoint
-    headers = generate_headers(include_content_type=True, tenant_id=tenant_id)
+    headers = TM.generate_headers(include_content_type=True, tenant_id=tenant_id)
+
+    # Set the URL and query parameters for the request to the /data endpoint
     url = (
         f"{IO_BASE_URL}/data/{dataset_id}"
         f"{'?fromDate=' + from_date if from_date else ''}"
@@ -185,12 +286,15 @@ def delete_data(
         headers=headers,
     )
 
-    # Check the status code to see if access token is outdated (re-run script if so)
-    update_access_token(res.status_code)
+    # If response status code is 403, raise exception to trigger access token update
+    if res.status_code == 403:
+        raise OutdatedAccessTokenException("Outdated access token!", res)
 
     # If the request was successful, return the success response
     if res.status_code == 200:
-        return DeleteDataResponseSuccess(**res.json())
+        data_response = DeleteDataResponseSuccess(**res.json())
+        print(f"Data deleted! Message: {data_response.message}\n")
+        return data_response
 
     # If not, handle the failure by printing the error message and raising an exception
     _handle_failed_request(res, "data")
@@ -200,14 +304,14 @@ def delete_data(
 def poll_job_status(tenant_id: str, job_id: str):
     print("Polling job status...")
     url = f"{IO_BASE_URL}/status"
-    headers: dict = generate_headers(tenant_id=tenant_id, job_id=job_id)
+    headers: dict = TM.generate_headers(tenant_id=tenant_id, job_id=job_id)
     status_response: StatusResponseSuccess = _start_status_poll(url, headers)
     status_response: StatusResponseSuccess = _call_status_endpoint(url, headers)
     while status_response.status == "inProgress":
         print(f"\tResponse status: {status_response.status}")
         sleep(SLEEP_DURATION_LONG)
         status_response: StatusResponseSuccess = _call_status_endpoint(url, headers)
-    print(f"Job complete! Message: {status_response.message}")
+    print(f"Job complete! Message: {status_response.message}\n")
 
 
 def _start_status_poll(url: str, headers: dict) -> StatusResponseSuccess:
@@ -230,9 +334,7 @@ def _call_status_endpoint(url: str, headers: dict) -> StatusResponseSuccess:
 
 
 ### ACCESS #############################################################################
-def update_access_token(status_code: int):
-    if status_code != 403:
-        return
+def update_access_token():
     res = requests.post(
         url=VISMA_CONNECT_URL,
         data={
@@ -243,8 +345,8 @@ def update_access_token(status_code: int):
         },
     ).json()
     access_token = res["access_token"]
+    TM.update_token(access_token)
     _update_env_file(access_token)
-    raise Exception("Access token had expired. New token generated. Try again.")
 
 
 def _update_env_file(access_token: str):
@@ -271,11 +373,22 @@ def _handle_failed_request(res: requests.Response, endpoint_name: str):
     raise Exception(f"Call to {endpoint_name} failed. See Error and Message above.")
 
 
-upload_data(TENANT_ID)
-# start_trainer(TENANT_ID)
-# res: CreatePredictionResponseSuccess = create_prediction(TENANT_ID)
-# get_results(TENANT_ID, job_id="55148db5b3fc412fa7ac7c6a61a3cf72")
-res: DeleteDataResponseSuccess = delete_data(
-    TENANT_ID, dataset_id="dummy-dataset", from_date="2022-01-01", to_date="2022-10-15"
-)
-print(res.message)
+def basic_flow():
+    upload_data(TENANT_ID)
+    start_trainer(TENANT_ID)
+    res: CreatePredictionResponseSuccess = create_prediction(TENANT_ID)
+    get_results(TENANT_ID, job_id=res.jobId)
+    delete_data(TENANT_ID, dataset_id="dummy-dataset")
+
+
+def inventory_classification_flow():
+    dataset_ids = upload_data(TENANT_ID, nbr_datasets=10)
+    res = start_inventory_classification(TENANT_ID, dataset_ids)
+    get_inventory_classification_results(TENANT_ID, res.jobId)
+    for dataset_id in dataset_ids:
+        delete_data(TENANT_ID, dataset_id=dataset_id)
+
+
+if __name__ == "__main__":
+    basic_flow()
+    inventory_classification_flow()

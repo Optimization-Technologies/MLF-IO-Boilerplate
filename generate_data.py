@@ -7,30 +7,33 @@ from dateutil.relativedelta import relativedelta
 from data_models import *
 
 
-def generate_upload_data_payload() -> UploadDataPayload:
+def generate_upload_data_payload(nbr_datasets: int = 1) -> UploadDataPayload:
     print("Generating dummy data...")
-    dataset_id = "dummy-dataset"
-    nbr_txns = 30
-    min_quantity = 150.0
-    max_quantity = 250.0
-    date = datetime.now()
-    transactions = []
-    for i in range(nbr_txns):
-        formatted_date = date.strftime("%Y-%m-%d")
-        quantity = random.uniform(min_quantity, max_quantity)
-        txn = Transaction(
-            quantity=quantity,
-            requestedDeliveryDate=formatted_date,  # TODO: Remove
-            salesDate=formatted_date,  # TODO: Remove
-            departureDate=formatted_date,
-            transactionId=f"txn{i}",
-            unitCost=104.25,
-            unitPrice=608.75,
-        )
-        transactions.append(txn)
-        date -= relativedelta(months=1)
-    dataset = Dataset(datasetId=dataset_id, transactions=transactions)
-    return UploadDataPayload(datasets=[dataset])
+    datasets = []
+    for i in range(nbr_datasets):
+        dataset_id = f"dummy-dataset-{i + 1}"
+        nbr_txns = int(random.uniform(24, 36))
+        min_quantity = random.uniform(50.0, 300.0)
+        max_quantity = random.uniform(min_quantity, min_quantity * 3.0)
+        unit_cost = random.uniform(50.0, 150.0)
+        unit_price = random.uniform(unit_cost * 1.5, unit_cost * 4.0)
+        date = datetime.now()
+        transactions = []
+        for i in range(nbr_txns):
+            formatted_date = date.strftime("%Y-%m-%d")
+            quantity = random.uniform(min_quantity, max_quantity)
+            txn = Transaction(
+                quantity=quantity,
+                departureDate=formatted_date,
+                transactionId=f"txn{i}",
+                unitCost=unit_cost,
+                unitPrice=unit_price,
+            )
+            transactions.append(txn)
+            date -= relativedelta(months=1)
+        dataset = Dataset(datasetId=dataset_id, transactions=transactions)
+        datasets.append(dataset)
+    return UploadDataPayload(datasets=datasets)
 
 
 def generate_start_trainer_payload() -> StartTrainerPayload:
@@ -93,19 +96,12 @@ def generate_create_prediction_payload() -> CreatePredictionPayload:
     )
 
 
-def generate_headers(
-    include_token: bool = True,
-    include_content_type: bool = False,
-    tenant_id: str = "",
-    job_id: str = "",
-) -> dict:
-    headers = {}
-    if include_token:
-        headers["Authorization"] = f'Bearer {os.getenv("ACCESS_TOKEN")}'
-    if include_content_type:
-        headers["Content-Type"] = "application/json"
-    if tenant_id:
-        headers["tenantId"] = tenant_id
-    if job_id:
-        headers["jobId"] = job_id
-    return headers
+def generate_start_inventory_classification_payload(
+    dataset_ids: List[str],
+) -> StartInventoryClassificationPayload:
+    return StartInventoryClassificationPayload(
+        **{
+            "datasetIds": dataset_ids,
+            "abcDriver": "revenue",
+        }
+    )

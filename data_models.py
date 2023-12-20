@@ -1,12 +1,17 @@
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
+
+
+### EXCEPTION ##########################################################################
+class OutdatedAccessTokenException(Exception):
+    def __init__(self, message, response):
+        super().__init__(message)
+        self.response = response
 
 
 ### UPLOAD DATA ########################################################################
 class Transaction(BaseModel):
     quantity: float
-    requestedDeliveryDate: str
-    salesDate: str
     departureDate: str
     transactionId: str
     unitCost: float
@@ -120,7 +125,38 @@ class ResultsObject(BaseModel):
 
 
 class ResultsResponseSuccess(BaseModel):
+    message: Optional[str] = ""
     results: List[ResultsObject]
+
+
+### INVENTORY CLASSIFICATION ###########################################################
+class DateRange(BaseModel):
+    startDate: str
+    endDate: str
+
+
+class StartInventoryClassificationPayload(BaseModel):
+    datasetIds: List[str]
+    abcDriver: str
+
+
+class StartInventoryClassificationResponseSuccess(BaseModel):
+    jobId: str
+    message: str
+
+
+class InventoryClassificationResult(BaseModel):
+    datasetId: str
+    abcCategory: str
+    isSeasonal: bool
+    seasonalities: List[str]
+    demandType: str
+    trend: str
+
+
+class InventoryClassificationResultsResponse(BaseModel):
+    message: Optional[str] = ""
+    results: List[InventoryClassificationResult]
 
 
 ### DELETE DATA ########################################################################
