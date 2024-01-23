@@ -2,6 +2,7 @@ import json
 import os
 from functools import wraps
 from time import sleep
+from typing import Any, Callable
 
 import requests
 from dotenv import find_dotenv, load_dotenv
@@ -55,14 +56,26 @@ def handle_token_expiry(func):
 
 
 ### UPLOAD DATA ########################################################################
+def upload_data_from_json(tenant_id: str, path: str):
+    return upload_data(tenant_id, load_data_from_json, path)
+
+
+def upload_dummy_data(tenant_id: str, nbr_datasets: int = 1):
+    return upload_data(tenant_id, generate_upload_data_payload, nbr_datasets)
+
+
 @handle_token_expiry
-def upload_data(tenant_id: str, nbr_datasets: int = 1) -> List[str]:
+def upload_data(
+    tenant_id: str,
+    payload_function: Callable[[Any], UploadDataPayload],
+    arg,
+) -> List[str]:
     # Start by getting the presigned url to upload data to and the job ID
     presigned_url_response: PresignedUrlResponseSuccess = get_presigned_url(tenant_id)
 
     # Prepare headers and payload for the request to the presigned url
     headers: dict = TM.generate_headers(include_token=False, tenant_id=tenant_id)
-    payload: UploadDataPayload = generate_upload_data_payload(nbr_datasets)
+    payload: UploadDataPayload = payload_function(arg)
 
     # Make the request to the presigned url
     print("Uploading data...")
@@ -107,10 +120,12 @@ def get_presigned_url(tenant_id: str) -> PresignedUrlResponseSuccess:
 
 ### TRAINING ###########################################################################
 @handle_token_expiry
-def start_trainer(tenant_id: str) -> StartTrainerResponseSuccess:
+def start_trainer(
+    tenant_id: str, dataset_ids: list[str] = ["dummy-dataset-1"]
+) -> StartTrainerResponseSuccess:
     # Get the headers and payload for the request to the /start_trainer endpoint
     headers = TM.generate_headers(include_content_type=True, tenant_id=tenant_id)
-    payload: StartTrainerPayload = generate_start_trainer_payload()
+    payload: StartTrainerPayload = generate_start_trainer_payload(dataset_ids)
 
     # Make the request to the /start_trainer endpoint
     print("Starting trainer...")
@@ -136,10 +151,12 @@ def start_trainer(tenant_id: str) -> StartTrainerResponseSuccess:
 
 ### PREDICTION #########################################################################
 @handle_token_expiry
-def create_prediction(tenant_id: str) -> CreatePredictionResponseSuccess:
+def create_prediction(
+    tenant_id: str, dataset_ids=["dummy-dataset-1"]
+) -> CreatePredictionResponseSuccess:
     # Get the headers and payload for the request to the /create_prediction endpoint
     headers = TM.generate_headers(include_content_type=True, tenant_id=tenant_id)
-    payload: CreatePredictionPayload = generate_create_prediction_payload()
+    payload: CreatePredictionPayload = generate_create_prediction_payload(dataset_ids)
 
     # Make the request to the /create_prediction endpoint
     print("Creating prediction...")
@@ -186,7 +203,7 @@ def get_results(tenant_id: str, job_id: str) -> ResultsResponseSuccess:
         msg = (
             results_response.message
             if results_response.message != ""
-            else "NOT IMPLEMENTED"
+            else "Job completed successfully!"
         )
         print(f"Results retrieved! Message: {msg}\n")
         return results_response
@@ -374,7 +391,7 @@ def _handle_failed_request(res: requests.Response, endpoint_name: str):
 
 
 def basic_flow():
-    upload_data(TENANT_ID)
+    upload_dummy_data(TENANT_ID)
     start_trainer(TENANT_ID)
     res: CreatePredictionResponseSuccess = create_prediction(TENANT_ID)
     get_results(TENANT_ID, job_id=res.jobId)
@@ -382,7 +399,7 @@ def basic_flow():
 
 
 def inventory_classification_flow():
-    dataset_ids = upload_data(TENANT_ID, nbr_datasets=10)
+    dataset_ids = upload_dummy_data(TENANT_ID, nbr_datasets=10)
     res = start_inventory_classification(TENANT_ID, dataset_ids)
     get_inventory_classification_results(TENANT_ID, res.jobId)
     for dataset_id in dataset_ids:

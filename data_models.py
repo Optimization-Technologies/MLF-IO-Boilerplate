@@ -76,12 +76,11 @@ class CreatePredictionParameterObject(BaseModel):
     currentInventoryLevel: float
     wantedServiceLevel: float
     replenishmentInterval: ReplenishmentInterval
-    suppliers: List[Supplier]
+    supplier: Supplier
 
 
 class CreatePredictionPayload(BaseModel):
     parametersArray: List[CreatePredictionParameterObject]
-    supplierInfoArray: List[SupplierInfo]
 
 
 class CreatePredictionResponseSuccess(BaseModel):

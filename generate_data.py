@@ -1,7 +1,6 @@
-import os
 import random
 from datetime import datetime
-
+import json
 from dateutil.relativedelta import relativedelta
 
 from data_models import *
@@ -36,29 +35,61 @@ def generate_upload_data_payload(nbr_datasets: int = 1) -> UploadDataPayload:
     return UploadDataPayload(datasets=datasets)
 
 
-def generate_start_trainer_payload() -> StartTrainerPayload:
+def load_data_from_json(file_path) -> UploadDataPayload:
+    print("Loading data from JSON file...")
+    datasets = []
+
+    with open(file_path, "r") as file:
+        json_data = json.load(file)
+        dataset_data = json_data["datasets"]  # Extract the datasets array
+
+        for data in dataset_data:
+            dataset_id = data["datasetId"]
+            transactions_data = data["transactions"]
+            transactions = []
+
+            for txn_data in transactions_data:
+                txn = Transaction(
+                    quantity=txn_data["quantity"],
+                    departureDate=txn_data["departureDate"],
+                    transactionId=txn_data["transactionId"],
+                    unitCost=txn_data["unitCost"],
+                    unitPrice=txn_data["unitPrice"],
+                )
+                transactions.append(txn)
+
+            dataset = Dataset(datasetId=dataset_id, transactions=transactions)
+            datasets.append(dataset)
+
+    return UploadDataPayload(datasets=datasets)
+
+
+def generate_start_trainer_payload(dataset_ids) -> StartTrainerPayload:
     return StartTrainerPayload(
         **{
             "parametersArray": [
                 StartTrainerParameterObject(
                     **{
-                        "datasetId": "dummy-dataset",
+                        "datasetId": dataset_id,
                         "frequency": "M",
                         "horizon": 4,
                     }
                 )
+                for dataset_id in dataset_ids
             ]
         }
     )
 
 
-def generate_create_prediction_payload() -> CreatePredictionPayload:
+def generate_create_prediction_payload(
+    dataset_ids: list[str],
+) -> CreatePredictionPayload:
     return CreatePredictionPayload(
         **{
             "parametersArray": [
                 CreatePredictionParameterObject(
                     **{
-                        "datasetId": "dummy-dataset",
+                        "datasetId": dataset_id,
                         "currentInventoryLevel": 50.0,
                         "wantedServiceLevel": 0.95,
                         "replenishmentInterval": ReplenishmentInterval(
@@ -67,30 +98,20 @@ def generate_create_prediction_payload() -> CreatePredictionPayload:
                                 "granularity": "M",
                             }
                         ),
-                        "suppliers": [
-                            Supplier(
-                                **{
-                                    "supplierId": "supplier-1",
-                                    "leadTime": LeadTime(
-                                        **{
-                                            "value": 2,
-                                            "granularity": "W",
-                                        }
-                                    ),
-                                }
-                            )
-                        ],
+                        "supplier": Supplier(
+                            **{
+                                "supplierId": "supplier-1",
+                                "leadTime": LeadTime(
+                                    **{
+                                        "value": 2,
+                                        "granularity": "W",
+                                    }
+                                ),
+                            }
+                        ),
                     }
                 )
-            ],
-            "supplierInfoArray": [
-                SupplierInfo(
-                    **{
-                        "supplierId": "supplier-1",
-                        "supplierName": "Supplier 1",
-                        "minimumOrderValue": 1000.0,
-                    }
-                )
+                for dataset_id in dataset_ids
             ],
         }
     )
