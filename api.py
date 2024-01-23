@@ -395,7 +395,7 @@ def basic_flow():
     start_trainer(TENANT_ID)
     res: CreatePredictionResponseSuccess = create_prediction(TENANT_ID)
     get_results(TENANT_ID, job_id=res.jobId)
-    delete_data(TENANT_ID, dataset_id="dummy-dataset")
+    delete_data(TENANT_ID, dataset_id="dummy-dataset-1")
 
 
 def inventory_classification_flow():
