@@ -1,4 +1,4 @@
-# MLF-IO-Boilerplate
+# ♨️ MLF-IO-Boilerplate
 
 Welcome to the **MLF-IO-Boilerplate** repository! This boilerplate is designed to streamline the process of trying out Resolves inventory optimization API. It includes a set of helpful files and modular functions to simplify the calling of API endpoints and aims to make your API integration process efficient and straightforward.
 
