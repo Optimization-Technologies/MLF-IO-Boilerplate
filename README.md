@@ -1,6 +1,6 @@
 # ♨️ MLF-IO-Boilerplate
 
-Welcome to the **MLF-IO-Boilerplate** repository! This boilerplate is designed to streamline the process of trying out Resolves inventory optimization API. It includes a set of helpful files and modular functions to simplify the calling of API endpoints and aims to make your API integration process efficient and straightforward.
+Welcome to the **MLF-IO-Boilerplate** repository! This boilerplate is designed to streamline the process of trying out Resolve's Inventory Optimization API. It includes a set of helpful files and modular functions to simplify the calling of API endpoints and aims to make your API integration process efficient and straightforward.
 
 ## Getting Started
 
@@ -8,7 +8,7 @@ To get started with this boilerplate, follow these steps:
 
 1. Clone this repository to your local machine.
 
-2. Review the `env.example` file and set up your environment variables accordingly in an `.env`-file.
+2. Review the `env.example` file and set up your environment variables accordingly in an `.env`-file. See [this page](https://docs.resolve.visma.com/inventory-optimization/authentication/) for a description on how to get set up with a client ID and secrets.
 
 3. Explore and run the `run_prediction_job.ipynb` notebook to get to know the prediction feature of the API. Here is also an example of how to upload your own data.
 
