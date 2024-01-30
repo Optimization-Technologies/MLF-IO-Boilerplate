@@ -1,1 +1,3 @@
-pyhumps
+pydantic
+python-dotenv
+requests
