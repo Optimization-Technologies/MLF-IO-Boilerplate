@@ -57,6 +57,36 @@ def upload_dummy_data(tenant_id: str, nbr_datasets: int = 1):
 
 
 @handle_token_expiry
+def upload_data_v2(
+    tenant_id: str,
+    payload: UploadDataPayload,
+) -> List[str]:
+    # Start by getting the presigned url to upload data to and the job ID
+    presigned_url_response: PresignedUrlResponseSuccess = get_presigned_url(tenant_id)
+
+    # Prepare headers and payload for the request to the presigned url
+    headers: dict = TM.generate_headers(include_token=False, tenant_id=tenant_id)
+
+    # Make the request to the presigned url
+    print("Uploading data...")
+    res = requests.put(
+        presigned_url_response.url,
+        headers=headers,
+        data=json.dumps(payload.model_dump()),  # NB! Need to stringify
+    )
+
+    # If response status code is 403, raise exception to trigger access token update
+    if res.status_code == 403:
+        raise OutdatedAccessTokenException("Outdated access token!", res)
+
+    # Poll the status endpoint until the job is complete
+    poll_job_status(tenant_id, presigned_url_response.jobId)
+
+    # Return the dataset IDs that were uploaded
+    return [dataset.datasetId for dataset in payload.datasets]
+
+
+@handle_token_expiry
 def upload_data(
     tenant_id: str,
     payload_function: Callable[[Any], UploadDataPayload],
