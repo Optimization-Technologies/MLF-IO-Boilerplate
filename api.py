@@ -28,14 +28,6 @@ SLEEP_DURATION_SHORT = 3
 SLEEP_DURATION_LONG = 6
 
 
-"""
-TODO Stuff identified to fix in the IO service:
-- Required fields in responses - make sure all fields that we list in responses are actually there anyway
-- We do not seem to always return a message from the Results endpoint (not for 200 OK)
-- Simplify suppliers schema
-"""
-
-
 TM = TokenManager()
 
 
