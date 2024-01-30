@@ -1,12 +1,13 @@
+import os
 import random
 from datetime import datetime
+from uuid import uuid4
 
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 
+import api
 import data_models as dm
-
-from uuid import uuid4
 
 
 def main():
@@ -15,8 +16,24 @@ def main():
     datasets_start_trainer_params = generate_datasets_start_trainer_params(df)
     datasets_create_prediction_params = generate_datasets_create_prediction_params(df)
 
-    dataset_ids = [dataset.datasetId for dataset in datasets]
+    # This functionality will run one job per dataset
+    for dataset, start_trainer_params, create_prediction_params in zip(
+        datasets,
+        datasets_start_trainer_params,
+        datasets_create_prediction_params,
+    ):
+        tenant_id = f"{os.getenv("TENANT_ID")}-{datetime.now()}"
+        api.upload_data_v2(tenant_id, dm.UploadDataPayload([dataset]))
+        
+        # TODO: Modify this function to accept the start_trainer_params
+        api.start_trainer(tenant_id, start_trainer_params)
+        
+        # TODO: Modify this function to accept the create_prediction_params
+        api.create_prediction(tenant_id, create_prediction_params)
 
+    # TODO: Implement functionality that runs multiple datasets in one job
+        
+    # TODO: Implement parallelization
 
 
 def generate_datasets(df):
@@ -60,7 +77,7 @@ def _generate_single_dataset(
     dataset_id: str,
     nbr_months: int,
     nbr_txns_per_month: int,
-) -> dm.UploadDataPayload:
+) -> dm.Dataset:
     """Generate a dataset based on the given parameters.
 
     The logic starts at the current date, and fills the current month with
