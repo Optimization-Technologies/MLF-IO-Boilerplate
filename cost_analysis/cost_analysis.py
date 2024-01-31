@@ -18,6 +18,9 @@ load_dotenv(find_dotenv())
 # TODO: Refactor this file so it's clean and easy to read
 # TODO: Talk to Thea about how to set up this in the sandbox
 
+TENANT_ID = "io-cost-analysis-medium"
+
+
 def main():
     # Prepare the datasets and the parameter settings for the jobs
     df = _load_csv_file("cost_analysis/cost_analysis_instances.csv")
@@ -30,22 +33,22 @@ def main():
         all_datasets,
         all_st_parameter_objects,
         all_cp_parameter_objects,
-        datasets_per_slice=5,
+        datasets_per_slice=72,
     )
 
     # Run jobs in parallel or sequentially
-    run_jobs_in_parallel(slices, break_after=1)
+    run_jobs_in_parallel(slices)
     # run_jobs_sequentially(slices)
 
 
 def run_jobs_in_parallel(slices, break_after=-1):
-    with ThreadPoolExecutor() as executor:
+    with ThreadPoolExecutor(max_workers=72) as executor:
         # Prepare the threads to run
         futures = []
         for i, slice in enumerate(slices):
             future = executor.submit(
                 run_upload_train_predict,
-                tenant_id=f"io-cost-analysis-test-run-{i}",
+                tenant_id=f"{TENANT_ID}-{0 if i < 9 else ''}{i+1}",
                 datasets=slice[0],
                 st_parameter_objects=slice[1],
                 cp_parameter_objects=slice[2],
@@ -64,7 +67,7 @@ def run_jobs_in_parallel(slices, break_after=-1):
 def run_jobs_sequentially(slices, break_after=-1):
     for i, slice in enumerate(slices):
         run_upload_train_predict(
-            tenant_id=f"io-cost-analysis-test-run-{i}",
+            tenant_id=f"{TENANT_ID}-{0 if i < 10 else ''}{i}",
             datasets=slice[0],
             st_parameter_objects=slice[1],
             cp_parameter_objects=slice[2],

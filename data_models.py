@@ -178,5 +178,5 @@ class StatusResponseSuccess(BaseModel):
 
 ### GENERAL ############################################################################
 class FailureResponse(BaseModel):
-    error: str
-    message: str
+    error: Optional[str] = ""
+    message: Optional[str] = ""

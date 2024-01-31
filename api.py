@@ -1,6 +1,7 @@
 import json
 import os
 from functools import wraps
+from threading import Lock
 from time import sleep
 from typing import Any, Callable
 
@@ -28,8 +29,12 @@ MAX_RETRIES = 5
 SLEEP_DURATION_SHORT = 3
 SLEEP_DURATION_LONG = 6
 
-
+# Token manager for handling the access token
 TM = TokenManager()
+
+# Jobs run in parallel can try to update the access token at the same time.
+# Therefore, we need a lock to ensure that only one process tries to update it. 
+TOKEN_UPDATE_LOCK = Lock()
 
 
 def handle_token_expiry(func):
@@ -38,11 +43,10 @@ def handle_token_expiry(func):
         try:
             return func(*args, **kwargs)
         except OutdatedAccessTokenException:
-            if VERBOSE:
-                print("Access token expired. Refreshing...")
-            update_access_token()
-            if VERBOSE:
-                print("Retrying request...")
+            print("Access token expired. Refreshing...")
+            with TOKEN_UPDATE_LOCK:
+                update_access_token()
+            print("Retrying request...")
             return func(*args, **kwargs)
         except Exception as e:
             raise e
@@ -71,8 +75,7 @@ def upload_data_v2(
     headers: dict = TM.generate_headers(include_token=False, tenant_id=tenant_id)
 
     # Make the request to the presigned url
-    if VERBOSE:
-        print("Uploading data...")
+    print(f"Uploading data for tenant {tenant_id}...")
     res = requests.put(
         presigned_url_response.url,
         headers=headers,
@@ -156,8 +159,7 @@ def start_trainer_v2(
     headers = TM.generate_headers(include_content_type=True, tenant_id=tenant_id)
 
     # Make the request to the /start_trainer endpoint
-    if VERBOSE:
-        print("Starting trainer...")
+    print(f"Starting trainer for {tenant_id}...")
     res = requests.post(
         url=f"{IO_BASE_URL}/start_trainer",
         headers=headers,
@@ -219,8 +221,7 @@ def create_prediction_v2(
     headers = TM.generate_headers(include_content_type=True, tenant_id=tenant_id)
 
     # Make the request to the /create_prediction endpoint
-    if VERBOSE:
-        print("Creating prediction...")
+    print(f"Creating prediction for {tenant_id}...")
     res = requests.post(
         url=f"{IO_BASE_URL}/create_prediction",
         headers=headers,
@@ -428,7 +429,9 @@ def poll_job_status(tenant_id: str, job_id: str):
             print(f"\tResponse status: {status_response.status}")
         sleep(SLEEP_DURATION_LONG)
         status_response: StatusResponseSuccess = _call_status_endpoint(url, headers)
-    print(f"Job complete! Message: {status_response.message}\n")
+    print(
+        f"Job complete for tenant ID {tenant_id}! Message: {status_response.message}\n"
+    )
 
 
 def _start_status_poll(url: str, headers: dict) -> StatusResponseSuccess:
