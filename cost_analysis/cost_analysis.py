@@ -1,39 +1,97 @@
-import os
 import random
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from uuid import uuid4
 
 import pandas as pd
 from dateutil.relativedelta import relativedelta
+from dotenv import find_dotenv, load_dotenv
 
 import api
 import data_models as dm
 
+load_dotenv(find_dotenv())
+
+# TODO: Implement data deletion
+# TODO: Implement wrap-around for slices
+# TODO: Rename slices to something better
+# TODO: Refactor this file so it's clean and easy to read
+# TODO: Talk to Thea about how to set up this in the sandbox
 
 def main():
-    df = _load_csv_file("cost_analysis_instances.csv")
-    datasets = generate_datasets(df)
-    datasets_start_trainer_params = generate_datasets_start_trainer_params(df)
-    datasets_create_prediction_params = generate_datasets_create_prediction_params(df)
+    # Prepare the datasets and the parameter settings for the jobs
+    df = _load_csv_file("cost_analysis/cost_analysis_instances.csv")
+    all_datasets = generate_datasets(df)
+    all_st_parameter_objects = generate_st_parameter_objects(df)
+    all_cp_parameter_objects = generate_cp_parameter_objects(df)
 
-    # This functionality will run one job per dataset
-    for dataset, start_trainer_params, create_prediction_params in zip(
-        datasets,
-        datasets_start_trainer_params,
-        datasets_create_prediction_params,
-    ):
-        tenant_id = f"{os.getenv("TENANT_ID")}-{datetime.now()}"
-        api.upload_data_v2(tenant_id, dm.UploadDataPayload([dataset]))
-        
-        # TODO: Modify this function to accept the start_trainer_params
-        api.start_trainer(tenant_id, start_trainer_params)
-        
-        # TODO: Modify this function to accept the create_prediction_params
-        api.create_prediction(tenant_id, create_prediction_params)
+    # Get the slices of the jobs to run
+    slices = get_slices(
+        all_datasets,
+        all_st_parameter_objects,
+        all_cp_parameter_objects,
+        datasets_per_slice=5,
+    )
 
-    # TODO: Implement functionality that runs multiple datasets in one job
-        
-    # TODO: Implement parallelization
+    # Run jobs in parallel or sequentially
+    run_jobs_in_parallel(slices, break_after=1)
+    # run_jobs_sequentially(slices)
+
+
+def run_jobs_in_parallel(slices, break_after=-1):
+    with ThreadPoolExecutor() as executor:
+        # Prepare the threads to run
+        futures = []
+        for i, slice in enumerate(slices):
+            future = executor.submit(
+                run_upload_train_predict,
+                tenant_id=f"io-cost-analysis-test-run-{i}",
+                datasets=slice[0],
+                st_parameter_objects=slice[1],
+                cp_parameter_objects=slice[2],
+            )
+            futures.append(future)
+
+            # Cut the jobs short if needed
+            if i == break_after:
+                break
+
+        # Run the threads
+        for future in futures:
+            future.result()
+
+
+def run_jobs_sequentially(slices, break_after=-1):
+    for i, slice in enumerate(slices):
+        run_upload_train_predict(
+            tenant_id=f"io-cost-analysis-test-run-{i}",
+            datasets=slice[0],
+            st_parameter_objects=slice[1],
+            cp_parameter_objects=slice[2],
+        )
+
+        # Cut the jobs short if needed
+        if i == break_after:
+            break
+
+
+def run_upload_train_predict(
+    tenant_id: str,  # Name of the run
+    datasets: list[dm.Dataset],
+    st_parameter_objects: list[dm.StartTrainerParameterObject],
+    cp_parameter_objects: list[dm.CreatePredictionParameterObject],
+):
+    # Upload data
+    payload = dm.UploadDataPayload(datasets=datasets)
+    api.upload_data_v2(tenant_id, payload)
+
+    # Start trainer
+    payload = dm.StartTrainerPayload(parametersArray=st_parameter_objects)
+    api.start_trainer_v2(tenant_id, payload)
+
+    # Create prediction
+    payload = dm.CreatePredictionPayload(parametersArray=cp_parameter_objects)
+    api.create_prediction_v2(tenant_id, payload)
 
 
 def generate_datasets(df):
@@ -47,30 +105,100 @@ def generate_datasets(df):
     return datasets
 
 
-def generate_datasets_start_trainer_params(df):
-    datasets_start_trainer_params = []
+def generate_st_parameter_objects(df):
+    st_parameter_objects = []
     for _, row in df.iterrows():
         frequency = row["frequency"]
         horizon = row["horizon"]
         dataset_id = row["Dataset ID"]
-        dataset_start_trainer_params = _generate_start_trainer_parameters(
+        st_parameter_object = _get_st_parameter_object(
             dataset_id=dataset_id,
             frequency=frequency,
             horizon=horizon,
         )
-        datasets_start_trainer_params.append(dataset_start_trainer_params)
-    return datasets_start_trainer_params
+        st_parameter_objects.append(st_parameter_object)
+    return st_parameter_objects
 
 
-def generate_datasets_create_prediction_params(df):
-    datasets_create_prediction_params = []
+def _get_st_parameter_object(
+    dataset_id: str,
+    frequency: str,
+    horizon: int,
+) -> dm.StartTrainerParameterObject:
+    return dm.StartTrainerParameterObject(
+        **{
+            "datasetId": dataset_id,
+            "frequency": frequency,
+            "horizon": horizon,
+        }
+    )
+
+
+def generate_cp_parameter_objects(df):
+    cp_parameter_objects = []
     for _, row in df.iterrows():
         dataset_id = row["Dataset ID"]
-        dataset_create_prediction_params = _generate_create_prediction_parameters(
+        cp_parameter_object = _get_cp_parameter_object(
             dataset_id=dataset_id,
         )
-        datasets_create_prediction_params.append(dataset_create_prediction_params)
-    return datasets_create_prediction_params
+        cp_parameter_objects.append(cp_parameter_object)
+    return cp_parameter_objects
+
+
+def _get_cp_parameter_object(
+    dataset_id: str,
+) -> dm.CreatePredictionParameterObject:
+    return dm.CreatePredictionParameterObject(
+        **{
+            "datasetId": dataset_id,
+            "currentInventoryLevel": 50.0,
+            "wantedServiceLevel": 0.95,
+            "replenishmentInterval": dm.ReplenishmentInterval(
+                **{
+                    "value": 1,
+                    "granularity": "W",
+                }
+            ),
+            "supplier": dm.Supplier(
+                **{
+                    "supplierId": "supplier-1",
+                    "leadTime": dm.LeadTime(
+                        **{
+                            "value": 1,
+                            "granularity": "W",
+                        }
+                    ),
+                }
+            ),
+        }
+    )
+
+
+def get_slices(
+    datasets,
+    start_trainer_params,
+    create_prediction_params,
+    datasets_per_slice,
+):
+    # Calculate the number of slices
+    num_slices = len(datasets) // datasets_per_slice
+    if len(datasets) % datasets_per_slice != 0:
+        num_slices += 1
+
+    # Create the slices
+    slices = []
+    for i in range(num_slices):
+        start_index = i * datasets_per_slice
+        end_index = start_index + datasets_per_slice
+        slices.append(
+            (
+                datasets[start_index:end_index],
+                start_trainer_params[start_index:end_index],
+                create_prediction_params[start_index:end_index],
+            )
+        )
+
+    return slices
 
 
 def _generate_single_dataset(
@@ -95,7 +223,7 @@ def _generate_single_dataset(
         dm.Dataset: The generated dataset.
     """
 
-    print(f"Generating dataset {dataset_id}...")
+    # print(f"Generating dataset {dataset_id}...")
     min_quantity = random.uniform(50.0, 300.0)
     max_quantity = random.uniform(min_quantity, min_quantity * 3.0)
     unit_cost = random.uniform(50.0, 150.0)
@@ -132,76 +260,11 @@ def _generate_single_dataset(
     return dm.Dataset(datasetId=dataset_id, transactions=txns)
 
 
-def _generate_start_trainer_parameters(
-    dataset_id: str,
-    frequency: str,
-    horizon: int,
-) -> dm.StartTrainerParameters:
-    return dm.StartTrainerParameterObject(
-        **{
-            "datasetId": dataset_id,
-            "frequency": frequency,
-            "horizon": horizon,
-        }
-    )
-
-
-def _generate_start_trainer_payload(
-    start_trainer_parameters: list[dm.StartTrainerParameters],
-) -> dm.StartTrainerPayload:
-    return dm.StartTrainerPayload(
-        **{
-            "parametersArray": [
-                start_trainer_parameter_obj
-                for start_trainer_parameter_obj in start_trainer_parameters
-            ]
-        }
-    )
-
-
-def _generate_create_prediction_parameters(
-    dataset_id: str,
-) -> dm.CreatePredictionParameterObject:
-    dm.CreatePredictionParameterObject(
-        **{
-            "datasetId": dataset_id,
-            "currentInventoryLevel": 50.0,
-            "wantedServiceLevel": 0.95,
-            "replenishmentInterval": dm.ReplenishmentInterval(
-                **{
-                    "value": 1,
-                    "granularity": "M",
-                }
-            ),
-            "supplier": dm.Supplier(
-                **{
-                    "supplierId": "supplier-1",
-                    "leadTime": dm.LeadTime(
-                        **{
-                            "value": 2,
-                            "granularity": "W",
-                        }
-                    ),
-                }
-            ),
-        }
-    )
-
-
-def _generate_create_prediction_payload(
-    create_prediction_parameters: list[dm.CreatePredictionParameterObject],
-) -> dm.CreatePredictionPayload:
-    return dm.CreatePredictionPayload(
-        **{
-            "parametersArray": [
-                create_prediction_parameter_obj
-                for create_prediction_parameter_obj in create_prediction_parameters
-            ],
-        }
-    )
-
-
 def _load_csv_file(file_name: str) -> pd.DataFrame:
     file_path = f"./{file_name}"
     df = pd.read_csv(file_path)
     return df
+
+
+if __name__ == "__main__":
+    main()

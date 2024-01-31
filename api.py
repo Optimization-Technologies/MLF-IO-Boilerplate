@@ -21,6 +21,7 @@ VISMA_CONNECT_SCOPE = os.getenv("VISMA_CONNECT_SCOPE")
 VISMA_CONNECT_URL = os.getenv("VISMA_CONNECT_URL")
 IO_BASE_URL = os.getenv("IO_BASE_URL")
 TENANT_ID = os.getenv("TENANT_ID")
+VERBOSE = True if os.getenv("VERBOSE") == 1 else False
 
 # Constants
 MAX_RETRIES = 5
@@ -37,9 +38,11 @@ def handle_token_expiry(func):
         try:
             return func(*args, **kwargs)
         except OutdatedAccessTokenException:
-            print("Access token expired. Refreshing...")
+            if VERBOSE:
+                print("Access token expired. Refreshing...")
             update_access_token()
-            print("Retrying request...")
+            if VERBOSE:
+                print("Retrying request...")
             return func(*args, **kwargs)
         except Exception as e:
             raise e
@@ -68,7 +71,8 @@ def upload_data_v2(
     headers: dict = TM.generate_headers(include_token=False, tenant_id=tenant_id)
 
     # Make the request to the presigned url
-    print("Uploading data...")
+    if VERBOSE:
+        print("Uploading data...")
     res = requests.put(
         presigned_url_response.url,
         headers=headers,
@@ -100,7 +104,8 @@ def upload_data(
     payload: UploadDataPayload = payload_function(arg)
 
     # Make the request to the presigned url
-    print("Uploading data...")
+    if VERBOSE:
+        print("Uploading data...")
     res = requests.put(
         presigned_url_response.url,
         headers=headers,
@@ -125,7 +130,8 @@ def get_presigned_url(tenant_id: str) -> PresignedUrlResponseSuccess:
     headers: dict = TM.generate_headers(tenant_id=tenant_id)
 
     # Make the request to the /presigned_url endpoint
-    print("Getting presigned url...")
+    if VERBOSE:
+        print("Getting presigned url...")
     res = requests.get(url, headers=headers)
 
     # If response status code is 403, raise exception to trigger access token update
@@ -142,6 +148,37 @@ def get_presigned_url(tenant_id: str) -> PresignedUrlResponseSuccess:
 
 ### TRAINING ###########################################################################
 @handle_token_expiry
+def start_trainer_v2(
+    tenant_id: str,
+    payload: StartTrainerPayload,
+) -> StartTrainerResponseSuccess:
+    # Get the headers and payload for the request to the /start_trainer endpoint
+    headers = TM.generate_headers(include_content_type=True, tenant_id=tenant_id)
+
+    # Make the request to the /start_trainer endpoint
+    if VERBOSE:
+        print("Starting trainer...")
+    res = requests.post(
+        url=f"{IO_BASE_URL}/start_trainer",
+        headers=headers,
+        data=json.dumps(payload.model_dump()),  # NB! Need to stringify
+    )
+
+    # If response status code is 403, raise exception to trigger access token update
+    if res.status_code == 403:
+        raise OutdatedAccessTokenException("Outdated access token!", res)
+
+    # If the request was successful, poll the status endpoint until the job is complete
+    if res.status_code == 202:
+        start_trainer_response = StartTrainerResponseSuccess(**res.json())
+        poll_job_status(tenant_id, start_trainer_response.jobId)
+        return start_trainer_response
+
+    # If not, handle the failure by printing the error message and raising an exception
+    _handle_failed_request(res, "start_trainer")
+
+
+@handle_token_expiry
 def start_trainer(
     tenant_id: str, dataset_ids: list[str] = ["dummy-dataset-1"]
 ) -> StartTrainerResponseSuccess:
@@ -150,7 +187,8 @@ def start_trainer(
     payload: StartTrainerPayload = generate_start_trainer_payload(dataset_ids)
 
     # Make the request to the /start_trainer endpoint
-    print("Starting trainer...")
+    if VERBOSE:
+        print("Starting trainer...")
     res = requests.post(
         url=f"{IO_BASE_URL}/start_trainer",
         headers=headers,
@@ -173,15 +211,16 @@ def start_trainer(
 
 ### PREDICTION #########################################################################
 @handle_token_expiry
-def create_prediction(
-    tenant_id: str, dataset_ids=["dummy-dataset-1"]
+def create_prediction_v2(
+    tenant_id: str,
+    payload: CreatePredictionPayload,
 ) -> CreatePredictionResponseSuccess:
     # Get the headers and payload for the request to the /create_prediction endpoint
     headers = TM.generate_headers(include_content_type=True, tenant_id=tenant_id)
-    payload: CreatePredictionPayload = generate_create_prediction_payload(dataset_ids)
 
     # Make the request to the /create_prediction endpoint
-    print("Creating prediction...")
+    if VERBOSE:
+        print("Creating prediction...")
     res = requests.post(
         url=f"{IO_BASE_URL}/create_prediction",
         headers=headers,
@@ -196,7 +235,37 @@ def create_prediction(
     if res.status_code == 202:
         create_prediction_response = CreatePredictionResponseSuccess(**res.json())
         poll_job_status(tenant_id, create_prediction_response.jobId)
-        print(create_prediction_response.jobId)
+        return create_prediction_response
+
+    # If not, handle the failure by printing the error message and raising an exception
+    _handle_failed_request(res, "create_prediction")
+
+
+@handle_token_expiry
+def create_prediction(
+    tenant_id: str, dataset_ids=["dummy-dataset-1"]
+) -> CreatePredictionResponseSuccess:
+    # Get the headers and payload for the request to the /create_prediction endpoint
+    headers = TM.generate_headers(include_content_type=True, tenant_id=tenant_id)
+    payload: CreatePredictionPayload = generate_create_prediction_payload(dataset_ids)
+
+    # Make the request to the /create_prediction endpoint
+    if VERBOSE:
+        print("Creating prediction...")
+    res = requests.post(
+        url=f"{IO_BASE_URL}/create_prediction",
+        headers=headers,
+        data=json.dumps(payload.model_dump()),  # NB! Need to stringify
+    )
+
+    # If response status code is 403, raise exception to trigger access token update
+    if res.status_code == 403:
+        raise OutdatedAccessTokenException("Outdated access token!", res)
+
+    # If the request was successful, poll the status endpoint until the job is complete
+    if res.status_code == 202:
+        create_prediction_response = CreatePredictionResponseSuccess(**res.json())
+        poll_job_status(tenant_id, create_prediction_response.jobId)
         return create_prediction_response
 
     # If not, handle the failure by printing the error message and raising an exception
@@ -209,7 +278,8 @@ def get_results(tenant_id: str, job_id: str) -> ResultsResponseSuccess:
     headers = TM.generate_headers(tenant_id=tenant_id, job_id=job_id)
 
     # Make the request to the /results endpoint
-    print("Getting results...")
+    if VERBOSE:
+        print("Getting results...")
     res = requests.get(
         url=f"{IO_BASE_URL}/results",
         headers=headers,
@@ -227,7 +297,8 @@ def get_results(tenant_id: str, job_id: str) -> ResultsResponseSuccess:
             if results_response.message != ""
             else "Job completed successfully!"
         )
-        print(f"Results retrieved! Message: {msg}\n")
+        if VERBOSE:
+            print(f"Results retrieved! Message: {msg}\n")
         return results_response
 
     # If not, handle the failure by printing the error message and raising an exception
@@ -245,7 +316,8 @@ def start_inventory_classification(
     payload = generate_start_inventory_classification_payload(dataset_ids)
 
     # Make the request to the /start_inventory_classification endpoint
-    print("Starting inventory classification...")
+    if VERBOSE:
+        print("Starting inventory classification...")
     res = requests.post(
         url=f"{IO_BASE_URL}/start_inventory_classification",
         headers=headers,
@@ -275,7 +347,8 @@ def get_inventory_classification_results(
     headers = TM.generate_headers(tenant_id=tenant_id, job_id=job_id)
 
     # Make the request to the /inventory_classification_results endpoint
-    print("Getting inventory classification results...")
+    if VERBOSE:
+        print("Getting inventory classification results...")
     res = requests.get(
         url=f"{IO_BASE_URL}/inventory_classification_results",
         headers=headers,
@@ -293,7 +366,8 @@ def get_inventory_classification_results(
             if results_response.message != ""
             else "NOT IMPLEMENTED"
         )
-        print(f"Results retrieved! Message: {msg}\n")
+        if VERBOSE:
+            print(f"Results retrieved! Message: {msg}\n")
         return results_response
 
     # If not, handle the failure by printing the error message and raising an exception
@@ -319,7 +393,8 @@ def delete_data(
     )
 
     # Make the request to the /data endpoint
-    print("Deleting data...")
+    if VERBOSE:
+        print("Deleting data...")
     res = requests.delete(
         url=url,
         headers=headers,
@@ -332,7 +407,8 @@ def delete_data(
     # If the request was successful, return the success response
     if res.status_code == 200:
         data_response = DeleteDataResponseSuccess(**res.json())
-        print(f"Data deleted! Message: {data_response.message}\n")
+        if VERBOSE:
+            print(f"Data deleted! Message: {data_response.message}\n")
         return data_response
 
     # If not, handle the failure by printing the error message and raising an exception
@@ -341,13 +417,15 @@ def delete_data(
 
 ### STATUS #############################################################################
 def poll_job_status(tenant_id: str, job_id: str):
-    print("Polling job status...")
+    if VERBOSE:
+        print("Polling job status...")
     url = f"{IO_BASE_URL}/status"
     headers: dict = TM.generate_headers(tenant_id=tenant_id, job_id=job_id)
     status_response: StatusResponseSuccess = _start_status_poll(url, headers)
     status_response: StatusResponseSuccess = _call_status_endpoint(url, headers)
     while status_response.status == "inProgress":
-        print(f"\tResponse status: {status_response.status}")
+        if VERBOSE:
+            print(f"\tResponse status: {status_response.status}")
         sleep(SLEEP_DURATION_LONG)
         status_response: StatusResponseSuccess = _call_status_endpoint(url, headers)
     print(f"Job complete! Message: {status_response.message}\n")
