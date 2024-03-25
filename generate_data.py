@@ -3,10 +3,10 @@ from datetime import datetime
 import json
 from dateutil.relativedelta import relativedelta
 
-from data_models import *
+import data_models as dm
 
 
-def generate_upload_data_payload(nbr_datasets: int = 1) -> UploadDataPayload:
+def generate_upload_data_payload(nbr_datasets: int = 1) -> dm.UploadDataPayload:
     print("Generating dummy data...")
     datasets = []
     for i in range(nbr_datasets):
@@ -21,7 +21,7 @@ def generate_upload_data_payload(nbr_datasets: int = 1) -> UploadDataPayload:
         for i in range(nbr_txns):
             formatted_date = date.strftime("%Y-%m-%d")
             quantity = random.uniform(min_quantity, max_quantity)
-            txn = Transaction(
+            txn = dm.Transaction(
                 quantity=quantity,
                 departureDate=formatted_date,
                 transactionId=f"txn{i}",
@@ -30,12 +30,12 @@ def generate_upload_data_payload(nbr_datasets: int = 1) -> UploadDataPayload:
             )
             transactions.append(txn)
             date -= relativedelta(months=1)
-        dataset = Dataset(datasetId=dataset_id, transactions=transactions)
+        dataset = dm.Dataset(datasetId=dataset_id, transactions=transactions)
         datasets.append(dataset)
-    return UploadDataPayload(datasets=datasets)
+    return dm.UploadDataPayload(datasets=datasets)
 
 
-def load_data_from_json(file_path) -> UploadDataPayload:
+def load_data_from_json(file_path) -> dm.UploadDataPayload:
     print("Loading data from JSON file...")
     datasets = []
 
@@ -49,7 +49,7 @@ def load_data_from_json(file_path) -> UploadDataPayload:
             transactions = []
 
             for txn_data in transactions_data:
-                txn = Transaction(
+                txn = dm.Transaction(
                     quantity=txn_data["quantity"],
                     departureDate=txn_data["departureDate"],
                     transactionId=txn_data["transactionId"],
@@ -58,17 +58,17 @@ def load_data_from_json(file_path) -> UploadDataPayload:
                 )
                 transactions.append(txn)
 
-            dataset = Dataset(datasetId=dataset_id, transactions=transactions)
+            dataset = dm.Dataset(datasetId=dataset_id, transactions=transactions)
             datasets.append(dataset)
 
-    return UploadDataPayload(datasets=datasets)
+    return dm.UploadDataPayload(datasets=datasets)
 
 
-def generate_start_trainer_payload(dataset_ids) -> StartTrainerPayload:
-    return StartTrainerPayload(
+def generate_start_trainer_payload(dataset_ids) -> dm.StartTrainerPayload:
+    return dm.StartTrainerPayload(
         **{
             "parametersArray": [
-                StartTrainerParameterObject(
+                dm.StartTrainerParameterObject(
                     **{
                         "datasetId": dataset_id,
                         "frequency": "M",
@@ -83,25 +83,25 @@ def generate_start_trainer_payload(dataset_ids) -> StartTrainerPayload:
 
 def generate_create_prediction_payload(
     dataset_ids: list[str],
-) -> CreatePredictionPayload:
-    return CreatePredictionPayload(
+) -> dm.CreatePredictionPayload:
+    return dm.CreatePredictionPayload(
         **{
             "parametersArray": [
-                CreatePredictionParameterObject(
+                dm.CreatePredictionParameterObject(
                     **{
                         "datasetId": dataset_id,
                         "currentInventoryLevel": 50.0,
                         "wantedServiceLevel": 0.95,
-                        "replenishmentInterval": ReplenishmentInterval(
+                        "replenishmentInterval": dm.ReplenishmentInterval(
                             **{
                                 "value": 1,
                                 "granularity": "M",
                             }
                         ),
-                        "supplier": Supplier(
+                        "supplier": dm.Supplier(
                             **{
                                 "supplierId": "supplier-1",
-                                "leadTime": LeadTime(
+                                "leadTime": dm.LeadTime(
                                     **{
                                         "value": 2,
                                         "granularity": "W",
@@ -118,9 +118,9 @@ def generate_create_prediction_payload(
 
 
 def generate_start_inventory_classification_payload(
-    dataset_ids: List[str],
-) -> StartInventoryClassificationPayload:
-    return StartInventoryClassificationPayload(
+    dataset_ids: list[str],
+) -> dm.StartInventoryClassificationPayload:
+    return dm.StartInventoryClassificationPayload(
         **{
             "datasetIds": dataset_ids,
             "abcDriver": "revenue",
