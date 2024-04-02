@@ -53,8 +53,10 @@ def load_data_from_json(file_path) -> dm.UploadDataPayload:
                     quantity=txn_data["quantity"],
                     departureDate=txn_data["departureDate"],
                     transactionId=txn_data["transactionId"],
-                    unitCost=txn_data["unitCost"],
-                    unitPrice=txn_data["unitPrice"],
+                    unitCost=txn_data["unitCost"] if "unitCost" in txn_data else 0.0,
+                    unitPrice=(
+                        txn_data["unitPrice"] if "unitPrice" in txn_data else 0.0
+                    ),
                 )
                 transactions.append(txn)
 
