@@ -14,8 +14,8 @@ class Transaction(BaseModel):
     quantity: float
     departureDate: str
     transactionId: str
-    unitCost: float
-    unitPrice: float
+    unitCost: float | None
+    unitPrice: float | None
 
 
 class Dataset(BaseModel):
